@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Image, SafeAreaView } from 'react-native';
 import { db } from '../db/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import styles from '../styles/BooksListStyles';
 
@@ -10,22 +10,17 @@ const BooksList = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchBooks = async () => {
-      try {
-        const booksCollection = collection(db, 'books');
-        const booksSnapshot = await getDocs(booksCollection);
-        const booksData = booksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setBooks(booksData);
-        if (booksData.length === 0) {
-          console.log('No books found');
-        }
-      } catch (error) {
-        console.error('Error fetching books:', error);
-      } finally {
-        setLoading(false);
+    const unsubscribe = onSnapshot(collection(db, 'books'), (snapshot) => {
+      const booksData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setBooks(booksData);
+
+      if (booksData.length === 0) {
+        console.log('No books found');
       }
-    };
-    fetchBooks();
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   if (loading) {

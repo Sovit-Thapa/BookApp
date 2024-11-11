@@ -1,18 +1,29 @@
-import React from 'react';
-import { View, Text, FlatList, TouchableOpacity, Image, SafeAreaView } from 'react-native';
-import { useDispatch, useSelector } from 'react-redux';
-import { returnBook } from '../redux/actions';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, Image, SafeAreaView, Alert } from 'react-native';
+import { db } from '../db/firebase';
+import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import styles from '../styles/BorrowedStyles';
 
 const Borrowed = () => {
-  const borrowedBooks = useSelector(state => state.borrowedBooks);
-  const dispatch = useDispatch();
+  const [borrowedBooks, setBorrowedBooks] = useState([]);
 
-  const handleReturn = (bookId) => {
-    if (bookId) {
-      dispatch(returnBook(bookId));
-    } else {
-      console.log("Book ID is undefined, cannot return.");
+  useEffect(() => {
+    const borrowedQuery = query(collection(db, 'books'), where('available', '==', false));
+    const unsubscribe = onSnapshot(borrowedQuery, (snapshot) => {
+      const books = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setBorrowedBooks(books);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleReturn = async (bookId) => {
+    try {
+      await updateDoc(doc(db, 'books', bookId), { available: true });
+      Alert.alert('Success', 'Book returned successfully!');
+    } catch (error) {
+      console.error('Error returning book:', error);
+      Alert.alert('Error', 'Failed to return the book. Please try again.');
     }
   };
 
@@ -25,7 +36,7 @@ const Borrowed = () => {
       ) : (
         <FlatList
           data={borrowedBooks}
-          keyExtractor={(item) => item.id ? item.id.toString() : `book-${item.name}`}
+          keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <View style={styles.bookItem}>
               <View style={styles.bookInfo}>
@@ -35,10 +46,7 @@ const Borrowed = () => {
                   <Text style={styles.author}>by {item.author}</Text>
                 </View>
               </View>
-              <TouchableOpacity
-                style={styles.returnButton}
-                onPress={() => handleReturn(item.id)}
-              >
+              <TouchableOpacity style={styles.returnButton} onPress={() => handleReturn(item.id)}>
                 <Text style={styles.buttonText}>Return</Text>
               </TouchableOpacity>
             </View>

@@ -1,55 +1,68 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Button, Image, Alert, ScrollView, TouchableOpacity } from 'react-native'; 
-import { useDispatch, useSelector } from 'react-redux';
+import { View, Text, Alert, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { db } from '../db/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { borrowBook } from '../redux/actions';
-import styles from '../styles/BookDetailStyles'; 
+import { doc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import styles from '../styles/BookDetailStyles';
 
 const BookDetail = ({ route }) => {
   const { bookId } = route.params;
   const [book, setBook] = useState(null);
-  const borrowedBooks = useSelector(state => state.borrowedBooks);
-  const dispatch = useDispatch();
+  const [borrowedBooksCount, setBorrowedBooksCount] = useState(0);
 
   useEffect(() => {
-    const fetchBook = async () => {
-      try {
-        const bookDocRef = doc(db, 'books', bookId);
-        const bookDoc = await getDoc(bookDocRef);
-        if (bookDoc.exists()) {
-          const bookData = { id: bookDoc.id, ...bookDoc.data() };
-          setBook(bookData); 
-        } else {
-          console.log('No book found with this ID');
-        }
-      } catch (error) {
-        console.error('Error fetching book:', error);
+    const bookDocRef = doc(db, 'books', bookId);
+    const unsubscribeBook = onSnapshot(bookDocRef, (bookDoc) => {
+      if (bookDoc.exists()) {
+        const bookData = { id: bookDoc.id, ...bookDoc.data() };
+        setBook(bookData);
+      } else {
+        console.log('No book found with this ID');
       }
+    });
+
+    const borrowedQuery = query(collection(db, 'books'), where('available', '==', false));
+    const unsubscribeBorrowedBooks = onSnapshot(borrowedQuery, (querySnapshot) => {
+      setBorrowedBooksCount(querySnapshot.size);
+    });
+
+    return () => {
+      unsubscribeBook();
+      unsubscribeBorrowedBooks();
     };
-    fetchBook();
   }, [bookId]);
 
-  const handleBorrow = () => {
-    const isAlreadyBorrowed = borrowedBooks.some(borrowedBook => borrowedBook.id === book.id);
+  const handleBorrow = async () => {
+    if (!book) return;
 
-    if (isAlreadyBorrowed) {
-      Alert.alert('Book already borrowed', 'You cannot borrow the same book again.');
-    } else if (borrowedBooks.length < 3) {
-      dispatch(borrowBook(book)); 
-    } else {
-      alert('You cannot borrow more than three books at a time.');
+    if (!book.available) {
+      Alert.alert('Unavailable', 'This book is currently unavailable for borrowing.');
+      return;
+    }
+
+    if (borrowedBooksCount >= 3) {
+      Alert.alert('Limit reached', 'You cannot borrow more than three books at a time.');
+      return;
+    }
+
+    try {
+      const bookDocRef = doc(db, 'books', book.id);
+      await updateDoc(bookDocRef, { available: false });
+
+      setBorrowedBooksCount(borrowedBooksCount + 1);
+      Alert.alert('Success', 'Book borrowed successfully!');
+    } catch (error) {
+      console.error('Error borrowing book:', error);
     }
   };
 
-  if (!book) return <Text>Loading...</Text>; 
+  if (!book) return <Text>Loading...</Text>;
 
   return (
     <ScrollView style={styles.bookDetail}>
       <View style={styles.bookCard}>
         <Image source={{ uri: book.coverpage }} style={styles.coverImage} />
         <Text style={styles.bookName}>{book.name}</Text>
-        <Text style={styles.author}>{book.author}</Text>
+        <Text style={styles.author}>by {book.author}</Text>
         <Text style={styles.rating}>Rating: {book.rating}</Text>
         <Text style={styles.summary}>{book.summary}</Text>
 
